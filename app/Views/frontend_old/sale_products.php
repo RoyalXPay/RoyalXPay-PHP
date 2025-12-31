@@ -1,0 +1,46 @@
+<?= $this->extend('layouts/main') ?>
+<?= $this->section('content') ?>
+<div class="container">
+    <div class="product-card product-card-con pb-5">
+        <h2 class="fw-bold text-start pt-5" style="color: #080808;">Related Sale Items</h2>
+        <div class="row px-0 pb-5">
+            <?php if (!empty($saleProducts)) : ?>
+                <?php foreach ($saleProducts as $product) : ?>
+                    <div class="col-sm-12 col-md-6 col-lg-4 col-xl-4 mt-5 mb-4 px-4">
+                        <div
+                            class="card border border-0 shadow product-card"
+                            style="background-color: #e8e5e5; cursor: pointer;"
+                            onclick="window.location.href='<?= site_url('sale/products/details/' . $product->product_id); ?>'">
+                            <div class="card-header border border-0 pt-3 px-4" style="background-color: #e8e5e5!important;">
+                                <div class="d-flex justify-content-end align-items-center">
+                                    <span class="mkd-pli-new-product text-primary">View Details</span>
+                                </div>
+                            </div>
+                            <div class="card-body py-4 px-3">
+                                <?php
+                                $images = explode(',', $product->product_images);
+                                $firstImage = !empty($images[0]) ? $images[0] : 'default.png';
+                                ?>
+                                <img src="<?= base_url('uploads/products/' . $firstImage); ?>" class="d-block mx-auto" style="width:100%; height:500px;" alt="<?= esc($product->product_name); ?>">
+                            </div>
+                        </div>
+                        <div class="d-flex justify-content-between align-items-center mt-4 pt-2">
+                            <h5 class="entry-title mkd-pli-title text-center card-title-name m-0">
+                                <a href="<?= site_url('sale/products/details/' . $product->product_id); ?>" class="text-dark text-decoration-none">
+                                    <?= esc($product->product_name); ?>
+                                </a>
+                            </h5>
+                            <a href="<?= site_url('sale/products/details/' . $product->product_id); ?>" class="mkd-pli-new-product">View Details</a>
+                        </div>
+                    </div>
+                <?php endforeach; ?>
+            <?php else : ?>
+                <div class="col-12">
+                    <p class="text-center text-muted">No rent items found.</p>
+                </div>
+            <?php endif; ?>
+        </div>
+    </div>
+
+</div>
+<?= $this->endSection() ?>
