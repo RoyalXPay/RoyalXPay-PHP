@@ -2,7 +2,9 @@
 
 namespace Config;
 
+use App\Filters\ApiKeyFilter;
 use App\Filters\Auth;
+use App\Filters\BearerAuthFilter;
 use CodeIgniter\Filters\CSRF;
 use CodeIgniter\Filters\Honeypot;
 use CodeIgniter\Config\BaseConfig;
@@ -27,6 +29,8 @@ class Filters extends BaseConfig
         'toolbar'       => DebugToolbar::class,
         'invalidchars'  => InvalidChars::class,
         'secureheaders' => SecureHeaders::class,
+        'apikey'        => ApiKeyFilter::class,
+        'bearerauth'    => BearerAuthFilter::class,
     ];
 
     /**
