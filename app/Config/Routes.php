@@ -1174,5 +1174,10 @@ $routes->group('api/v1/Remittance', ['namespace' => 'App\Controllers\Api', 'filt
     $routes->post('TxnEnquiry', 'RemittanceController::txnEnquiry', ['filter' => 'bearerauth']);
 });
 
+// TAP Payment Webhooks (No authentication filters - TAP calls externally with HMAC signature)
+$routes->group('api/tap', ['namespace' => 'App\Controllers\Api'], function($routes) {
+    $routes->post('deposit-webhook', 'TapWebhookController::receiveDeposit');
+});
+
 
 
