@@ -46,18 +46,18 @@ class RemittanceController extends ResourceController
         
         if (!$user) {
             return $this->respond([
-                'statusCode' => 401,
+                'statusCode' => 100,
                 'message' => 'Credentials not matched!',
                 'data' => null
-            ], 401);
+            ], 100);
         }
 
         if (!password_verify($json['password'], $user['password'])) {
             return $this->respond([
-                'statusCode' => 401,
+                'statusCode' => 100,
                 'message' => 'Credentials not matched!',
                 'data' => null
-            ], 401);
+            ], 100);
         }
 
         // Generate token
@@ -93,6 +93,13 @@ class RemittanceController extends ResourceController
                 'message' => 'INVALID WALLET!',
                 'data' => null
             ], 200);
+        }
+
+        // Store wallet_number in the token for future use
+        $authHeader = $this->request->getHeaderLine('Authorization');
+        if (!empty($authHeader)) {
+            $token = str_replace('Bearer ', '', $authHeader);
+            $this->tokenModel->updateWalletNumber($token, $json['WalletNumber']);
         }
 
         return $this->respond([
@@ -286,41 +293,69 @@ class RemittanceController extends ResourceController
      * Balance Enquiry
      * POST /api/v1/Remittance/BalanceEnquiry
      * Headers: x-api-key, Authorization: Bearer {token}, Content-Type: application/json
+     * Request body (optional): {"accountNo": "880171064443"}
+     * If accountNo not provided, uses wallet_number from validateUser
      */
     public function balanceEnquiry()
     {
-        $json = $this->request->getJSON(true);
-        
-        // Validate required field
-        if (empty($json['accountNo'])) {
-            return $this->respond([
-                'statusCode' => 400,
-                'message' => 'accountNo is required',
-                'data' => null
-            ], 400);
-        }
-
-        $accountNo = $json['accountNo'];
-
         try {
-            // Get wallet details by wallet_number (accountNo)
-            $wallet = $this->walletModel->validateWallet($accountNo);
+            $json = $this->request->getJSON(true);
+            
+            // Get wallet_number from token (set by validateUser endpoint)
+            $tokenWalletNumber = $this->request->walletNumber ?? null;
+            
+            // Check if accountNo is provided in request body
+            $walletNumber = null;
+            if (!empty($json['accountNo'])) {
+                // If accountNo is provided, it must match the validated wallet number
+                if (!$tokenWalletNumber) {
+                    return $this->respond([
+                        'statusCode' => 400,
+                        'message' => 'Please call ValidateUser endpoint first',
+                        'data' => null
+                    ], 400);
+                }
+                
+                // Verify that accountNo matches the validated wallet number
+                if ($json['accountNo'] !== $tokenWalletNumber) {
+                    return $this->respond([
+                        'statusCode' => 400,
+                        'message' => 'Account number does not match validated wallet',
+                        'data' => null
+                    ], 400);
+                }
+                
+                $walletNumber = $json['accountNo'];
+            } else {
+                // Use wallet from token if no accountNo provided
+                if (!$tokenWalletNumber) {
+                    return $this->respond([
+                        'statusCode' => 400,
+                        'message' => 'Please provide accountNo in request body or call ValidateUser endpoint first',
+                        'data' => null
+                    ], 400);
+                }
+                $walletNumber = $tokenWalletNumber;
+            }
+
+            // Get wallet details using validateWallet
+            $wallet = $this->walletModel->validateWallet($walletNumber);
             
             if (!$wallet) {
                 return $this->respond([
-                    'statusCode' => 100,
+                    'statusCode' => 400,
                     'message' => 'Account not found!',
                     'data' => null
-                ], 200);
+                ], 400);
             }
 
             // Check if wallet is active
             if ($wallet['status'] !== 'Active') {
                 return $this->respond([
-                    'statusCode' => 100,
+                    'statusCode' => 400,
                     'message' => 'Account is not active!',
                     'data' => null
-                ], 200);
+                ], 400);
             }
 
             // Return success response with wallet details
@@ -337,10 +372,10 @@ class RemittanceController extends ResourceController
         } catch (Exception $e) {
             log_message('error', 'Balance Enquiry failed: ' . $e->getMessage());
             return $this->respond([
-                'statusCode' => 100,
+                'statusCode' => 400,
                 'message' => 'Something went wrong!',
                 'data' => null
-            ], 200);
+            ], 400);
         }
     }
 
@@ -356,26 +391,47 @@ class RemittanceController extends ResourceController
         // Validate required fields
         if (empty($json['accountNo'])) {
             return $this->respond([
-                'statusCode' => 100,
+                'statusCode' => 400,
                 'message' => 'Field accountNo is required',
                 'data' => null
-            ], 200);
+            ], 400);
         }
 
         if (empty($json['fromDate'])) {
             return $this->respond([
-                'statusCode' => 100,
+                'statusCode' => 400,
                 'message' => 'Field fromDate is required',
                 'data' => null
-            ], 200);
+            ], 400);
         }
 
         if (empty($json['toDate'])) {
             return $this->respond([
-                'statusCode' => 100,
+                'statusCode' => 400,
                 'message' => 'Field toDate is required',
                 'data' => null
-            ], 200);
+            ], 400);
+        }
+
+        // Get wallet_number from token (set by validateUser endpoint)
+        $tokenWalletNumber = $this->request->walletNumber ?? null;
+        
+        // Validate that accountNo matches the validated wallet number
+        if (!$tokenWalletNumber) {
+            return $this->respond([
+                'statusCode' => 400,
+                'message' => 'Please call ValidateUser endpoint first',
+                'data' => null
+            ], 400);
+        }
+        
+        // Verify that accountNo matches the validated wallet number
+        if ($json['accountNo'] !== $tokenWalletNumber) {
+            return $this->respond([
+                'statusCode' => 400,
+                'message' => 'Account number does not match validated wallet',
+                'data' => null
+            ], 400);
         }
 
         $accountNo = $json['accountNo'];
@@ -385,10 +441,10 @@ class RemittanceController extends ResourceController
         // Validate date format (dd/MM/yyyy)
         if (!$this->validateDateFormat($fromDate) || !$this->validateDateFormat($toDate)) {
             return $this->respond([
-                'statusCode' => 100,
+                'statusCode' => 400,
                 'message' => 'Invalid date format. Please use dd/MM/yyyy',
                 'data' => null
-            ], 200);
+            ], 400);
         }
 
         try {
@@ -398,19 +454,19 @@ class RemittanceController extends ResourceController
 
             if (!$fromDateDb || !$toDateDb) {
                 return $this->respond([
-                    'statusCode' => 100,
+                    'statusCode' => 400,
                     'message' => 'Invalid date values',
                     'data' => null
-                ], 200);
+                ], 400);
             }
 
             // Check if fromDate is after toDate
             if ($fromDateDb > $toDateDb) {
                 return $this->respond([
-                    'statusCode' => 100,
+                    'statusCode' => 400,
                     'message' => 'fromDate cannot be after toDate',
                     'data' => null
-                ], 200);
+                ], 400);
             }
 
             // Get wallet details
@@ -418,18 +474,18 @@ class RemittanceController extends ResourceController
             
             if (!$wallet) {
                 return $this->respond([
-                    'statusCode' => 100,
+                    'statusCode' => 400,
                     'message' => 'Account not found!',
                     'data' => null
-                ], 200);
+                ], 400);
             }
 
             if ($wallet['status'] !== 'Active') {
                 return $this->respond([
-                    'statusCode' => 100,
+                    'statusCode' => 400,
                     'message' => 'Account is not active!',
                     'data' => null
-                ], 200);
+                ], 400);
             }
 
             // Get transactions for the date range
@@ -465,10 +521,10 @@ class RemittanceController extends ResourceController
         } catch (Exception $e) {
             log_message('error', 'Get Account Statement failed: ' . $e->getMessage());
             return $this->respond([
-                'statusCode' => 100,
+                'statusCode' => 400,
                 'message' => 'Something went wrong!',
                 'data' => null
-            ], 200);
+            ], 400);
         }
     }
 

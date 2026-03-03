@@ -8,7 +8,7 @@ class AccessTokenModel extends Model
 {
     protected $table = 'access_tokens';
     protected $primaryKey = 'id';
-    protected $allowedFields = ['user_id', 'username', 'token', 'expires_at', 'created_at'];
+    protected $allowedFields = ['user_id', 'username', 'wallet_number', 'token', 'expires_at', 'created_at'];
     protected $useTimestamps = false;
 
     public function generateToken($userId, $username)
@@ -43,6 +43,16 @@ class AccessTokenModel extends Model
     public function revokeToken($token)
     {
         return $this->where('token', $token)->delete();
+    }
+
+    /**
+     * Update wallet_number for existing token
+     */
+    public function updateWalletNumber($token, $walletNumber)
+    {
+        return $this->where('token', $token)
+                    ->set(['wallet_number' => $walletNumber])
+                    ->update();
     }
 
     /**
