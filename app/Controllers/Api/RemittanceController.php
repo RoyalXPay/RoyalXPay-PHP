@@ -281,4 +281,203 @@ class RemittanceController extends ResourceController
             ]
         ], 200);
     }
+    
+    /**
+     * Balance Enquiry
+     * POST /api/v1/Remittance/BalanceEnquiry
+     * Headers: x-api-key, Authorization: Bearer {token}, Content-Type: application/json
+     */
+    public function balanceEnquiry()
+    {
+        $json = $this->request->getJSON(true);
+        
+        // Validate required field
+        if (empty($json['accountNo'])) {
+            return $this->respond([
+                'statusCode' => 400,
+                'message' => 'accountNo is required',
+                'data' => null
+            ], 400);
+        }
+
+        $accountNo = $json['accountNo'];
+
+        try {
+            // Get wallet details by wallet_number (accountNo)
+            $wallet = $this->walletModel->validateWallet($accountNo);
+            
+            if (!$wallet) {
+                return $this->respond([
+                    'statusCode' => 100,
+                    'message' => 'Account not found!',
+                    'data' => null
+                ], 200);
+            }
+
+            // Check if wallet is active
+            if ($wallet['status'] !== 'Active') {
+                return $this->respond([
+                    'statusCode' => 100,
+                    'message' => 'Account is not active!',
+                    'data' => null
+                ], 200);
+            }
+
+            // Return success response with wallet details
+            return $this->respond([
+                'statusCode' => 200,
+                'message' => 'Success',
+                'data' => [
+                    'accountName' => $wallet['name'],
+                    'currency' => $wallet['currency'] ?? 'BDT',
+                    'drawableBalance' => number_format($wallet['balance'], 2, '.', '')
+                ]
+            ], 200);
+
+        } catch (Exception $e) {
+            log_message('error', 'Balance Enquiry failed: ' . $e->getMessage());
+            return $this->respond([
+                'statusCode' => 100,
+                'message' => 'Something went wrong!',
+                'data' => null
+            ], 200);
+        }
+    }
+
+    /**
+     * Get Account Statement
+     * POST /api/v1/Remittance/GetAccountStatement
+     * Headers: x-api-key, Authorization: Bearer {token}, Content-Type: application/json
+     */
+    public function getAccountStatement()
+    {
+        $json = $this->request->getJSON(true);
+
+        // Validate required fields
+        if (empty($json['accountNo'])) {
+            return $this->respond([
+                'statusCode' => 100,
+                'message' => 'Field accountNo is required',
+                'data' => null
+            ], 200);
+        }
+
+        if (empty($json['fromDate'])) {
+            return $this->respond([
+                'statusCode' => 100,
+                'message' => 'Field fromDate is required',
+                'data' => null
+            ], 200);
+        }
+
+        if (empty($json['toDate'])) {
+            return $this->respond([
+                'statusCode' => 100,
+                'message' => 'Field toDate is required',
+                'data' => null
+            ], 200);
+        }
+
+        $accountNo = $json['accountNo'];
+        $fromDate = $json['fromDate'];
+        $toDate = $json['toDate'];
+
+        // Validate date format (dd/MM/yyyy)
+        if (!$this->validateDateFormat($fromDate) || !$this->validateDateFormat($toDate)) {
+            return $this->respond([
+                'statusCode' => 100,
+                'message' => 'Invalid date format. Please use dd/MM/yyyy',
+                'data' => null
+            ], 200);
+        }
+
+        try {
+            // Convert dates from dd/MM/yyyy to yyyy-MM-dd for database query
+            $fromDateDb = \DateTime::createFromFormat('d/m/Y', $fromDate);
+            $toDateDb = \DateTime::createFromFormat('d/m/Y', $toDate);
+
+            if (!$fromDateDb || !$toDateDb) {
+                return $this->respond([
+                    'statusCode' => 100,
+                    'message' => 'Invalid date values',
+                    'data' => null
+                ], 200);
+            }
+
+            // Check if fromDate is after toDate
+            if ($fromDateDb > $toDateDb) {
+                return $this->respond([
+                    'statusCode' => 100,
+                    'message' => 'fromDate cannot be after toDate',
+                    'data' => null
+                ], 200);
+            }
+
+            // Get wallet details
+            $wallet = $this->walletModel->validateWallet($accountNo);
+            
+            if (!$wallet) {
+                return $this->respond([
+                    'statusCode' => 100,
+                    'message' => 'Account not found!',
+                    'data' => null
+                ], 200);
+            }
+
+            if ($wallet['status'] !== 'Active') {
+                return $this->respond([
+                    'statusCode' => 100,
+                    'message' => 'Account is not active!',
+                    'data' => null
+                ], 200);
+            }
+
+            // Get transactions for the date range
+            $transactions = $this->transactionModel->getAccountStatement(
+                $wallet['id'],
+                $fromDateDb->format('Y-m-d'),
+                $toDateDb->format('Y-m-d')
+            );
+
+            // Format response data
+            $statementData = [];
+            foreach ($transactions as $txn) {
+                $statementData[] = [
+                    'acctName' => $wallet['name'],
+                    'traceNo' => $txn['trx_ref_no'] ?? '0',
+                    'trnDate' => date('d/m/Y', strtotime($txn['transaction_date'])),
+                    'valueDate' => date('d/m/Y', strtotime($txn['transaction_date'])),
+                    'transactionType' => 'Credit',
+                    'amount' => number_format($txn['amount'], 2, '.', ''),
+                    'balance' => number_format($txn['running_balance'], 2, '.', ''),
+                    'particulars' => $txn['remarks'] ?? 'Remittance Credit',
+                    'currCode' => $wallet['currency'] ?? 'BDT',
+                    'acctNumber' => $accountNo
+                ];
+            }
+
+            return $this->respond([
+                'statusCode' => 200,
+                'message' => 'Success',
+                'data' => $statementData
+            ], 200);
+
+        } catch (Exception $e) {
+            log_message('error', 'Get Account Statement failed: ' . $e->getMessage());
+            return $this->respond([
+                'statusCode' => 100,
+                'message' => 'Something went wrong!',
+                'data' => null
+            ], 200);
+        }
+    }
+
+    /**
+     * Validate date format dd/MM/yyyy
+     */
+    private function validateDateFormat($date)
+    {
+        $d = \DateTime::createFromFormat('d/m/Y', $date);
+        return $d && $d->format('d/m/Y') === $date;
+    }
 }

@@ -1172,6 +1172,8 @@ $routes->group('api/v1/Remittance', ['namespace' => 'App\Controllers\Api', 'filt
     $routes->post('ValidateUser', 'RemittanceController::validateUser', ['filter' => 'bearerauth']);
     $routes->post('push-request-txn', 'RemittanceController::pushRequestTxn', ['filter' => 'bearerauth']);
     $routes->post('TxnEnquiry', 'RemittanceController::txnEnquiry', ['filter' => 'bearerauth']);
+    $routes->post('BalanceEnquiry', 'RemittanceController::balanceEnquiry', ['filter' => 'bearerauth']);
+    $routes->post('GetAccountStatement', 'RemittanceController::getAccountStatement', ['filter' => 'bearerauth']);
 });
 
 
