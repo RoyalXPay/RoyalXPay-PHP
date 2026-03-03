@@ -24,7 +24,7 @@ class TapWebhookController extends BaseController
      * 
      * This endpoint:
      * 1. Receives deposit notification from TAP
-     * 2. Validates HMAC signature
+     * 2. HMAC signature is verified by TapWebhookFilter
      * 3. Checks idempotency (prevents duplicates)
      * 4. Processes deposit and updates wallet
      * 5. Returns standardized response
@@ -32,7 +32,7 @@ class TapWebhookController extends BaseController
     public function receiveDeposit()
     {
         try {
-            // Get raw payload
+            // Get raw payload (HMAC already verified by TapWebhookFilter)
             $rawPayload = $this->request->getBody();
             $payload = json_decode($rawPayload, true);
 
@@ -42,16 +42,10 @@ class TapWebhookController extends BaseController
                 return $this->standardResponse(400, 'Invalid payload structure', null);
             }
 
-            // Verify HMAC signature for security
-            if (!$this->verifyHmacSignature($rawPayload)) {
-                log_message('error', 'TAP Webhook: HMAC signature verification failed');
-                return $this->standardResponse(401, 'Authentication failed', null);
-            }
-
             // Extract TAP event details
             $tapEventId = $payload['id'] ?? $payload['event_id'] ?? null;
             $eventType = $payload['event'] ?? $payload['event_type'] ?? null;
-            $chargeData = $payload['object'] ?? $payload['charge'] ?? $payload;
+            $chargeData = $payload['data'] ?? $payload;
 
             // Check idempotency - prevent duplicate processing
             if ($this->depositModel->eventExists($tapEventId)) {
@@ -185,41 +179,9 @@ class TapWebhookController extends BaseController
         // Check for required TAP fields
         $hasEventId = isset($payload['id']) || isset($payload['event_id']);
         $hasEventType = isset($payload['event']) || isset($payload['event_type']);
-        $hasChargeData = isset($payload['object']) || isset($payload['charge']) || isset($payload['amount']);
+        $hasChargeData = isset($payload['data']) || isset($payload['amount']);
 
         return $hasEventId && ($hasEventType || $hasChargeData);
-    }
-
-    /**
-     * Verify HMAC signature from TAP
-     */
-    private function verifyHmacSignature($rawPayload)
-    {
-        $webhookSecret = env('TAP_WEBHOOK_SECRET');
-
-        // Skip verification if no secret configured (development only)
-        if (empty($webhookSecret)) {
-            log_message('warning', 'TAP_WEBHOOK_SECRET not configured - skipping signature verification');
-            return true;
-        }
-
-        // Get signature from header
-        $signature = $this->request->getHeaderLine('X-Tap-Signature');
-        
-        if (empty($signature)) {
-            $signature = $this->request->getHeaderLine('X-Webhook-Signature');
-        }
-
-        if (empty($signature)) {
-            log_message('error', 'No signature header found in TAP webhook');
-            return false;
-        }
-
-        // Calculate expected signature
-        $expectedSignature = hash_hmac('sha256', $rawPayload, $webhookSecret);
-
-        // Timing-safe comparison
-        return hash_equals($expectedSignature, $signature);
     }
 
     /**
