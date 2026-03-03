@@ -67,9 +67,9 @@ class CreateTapDepositsTable extends Migration
             'currency' => [
                 'type' => 'VARCHAR',
                 'constraint' => '10',
-                'default' => 'GBP',
+                'default' => 'BDT',
                 'null' => false,
-                'comment' => 'Currency code (e.g., GBP, USD)'
+                'comment' => 'Currency code (e.g., BDT, GBP, USD)'
             ],
             'status' => [
                 'type' => 'ENUM',

@@ -65,7 +65,7 @@ class TapWebhookController extends BaseController
             // Extract transaction details
             $transactionId = $chargeData['id'] ?? null;
             $amount = $chargeData['amount'] ?? 0;
-            $currency = strtoupper($chargeData['currency'] ?? 'GBP');
+            $currency = strtoupper($chargeData['currency'] ?? 'BDT');
             $tapStatus = $chargeData['status'] ?? 'pending';
             $customerPhone = $chargeData['customer']['phone']['number'] ?? null;
             $metadata = $chargeData['metadata'] ?? [];

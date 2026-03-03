@@ -1176,8 +1176,8 @@ $routes->group('api/v1/Remittance', ['namespace' => 'App\Controllers\Api', 'filt
     $routes->post('GetAccountStatement', 'RemittanceController::getAccountStatement', ['filter' => 'bearerauth']);
 });
 
-// TAP Payment Webhooks (No authentication filters - TAP calls externally with HMAC signature)
-$routes->group('api/tap', ['namespace' => 'App\Controllers\Api'], function($routes) {
+// TAP Payment Webhooks (Uses same authentication as Remittance endpoints)
+$routes->group('api/tap', ['namespace' => 'App\Controllers\Api', 'filter' => 'apikey'], function($routes) {
     $routes->post('deposit-webhook', 'TapWebhookController::receiveDeposit');
 });
 
