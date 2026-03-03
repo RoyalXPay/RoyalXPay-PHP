@@ -59,6 +59,7 @@ class BearerAuthFilter implements FilterInterface
         
         $request->userId = $tokenData['user_id'];
         $request->username = $tokenData['username'];
+        $request->walletNumber = $tokenData['wallet_number'] ?? null;
     }
 
     public function after(RequestInterface $request, ResponseInterface $response, $arguments = null)

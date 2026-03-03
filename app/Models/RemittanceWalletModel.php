@@ -8,7 +8,7 @@ class RemittanceWalletModel extends Model
 {
     protected $table = 'remittance_wallets';
     protected $primaryKey = 'id';
-    protected $allowedFields = ['wallet_number', 'name', 'status', 'balance', 'created_at', 'updated_at'];
+    protected $allowedFields = ['wallet_number', 'name', 'status', 'balance', 'currency', 'created_at', 'updated_at'];
     protected $useTimestamps = true;
     protected $createdField = 'created_at';
     protected $updatedField = 'updated_at';

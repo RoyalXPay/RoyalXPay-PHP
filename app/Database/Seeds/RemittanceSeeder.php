@@ -23,9 +23,9 @@ class RemittanceSeeder extends Seeder
                 'status' => 'active'
             ]);
             
-            echo "✓ Created API user: TAP (password: 123456@)\n";
+            echo "Created API user: TAP (password: 123456@)\n";
         } else {
-            echo "✓ API user TAP already exists\n";
+            echo "API user TAP already exists\n";
         }
 
         $walletModel = new \App\Models\RemittanceWalletModel();
@@ -55,11 +55,11 @@ class RemittanceSeeder extends Seeder
             $existing = $walletModel->where('wallet_number', $wallet['wallet_number'])->first();
             if (!$existing) {
                 $walletModel->insert($wallet);
-                echo "✓ Created wallet: {$wallet['wallet_number']} - {$wallet['name']}\n";
+                echo "Created wallet: {$wallet['wallet_number']} - {$wallet['name']}\n";
             }
         }
 
-        echo "\n✓ Remittance seeder completed!\n";
-        echo "✓ You can now test the API with username: TAP, password: 123456@\n";
+        echo "\n Remittance seeder completed!\n";
+        echo "You can now test the API with username: TAP, password: 123456@\n";
     }
 }
