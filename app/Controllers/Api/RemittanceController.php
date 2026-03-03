@@ -7,6 +7,7 @@ use App\Models\UsersModel;
 use App\Models\AccessTokenModel;
 use App\Models\RemittanceWalletModel;
 use App\Models\RemittanceTransactionModel;
+use App\Models\RemittanceSenderInfoModel;
 use Exception;
 
 class RemittanceController extends ResourceController
@@ -16,6 +17,7 @@ class RemittanceController extends ResourceController
     protected $tokenModel;
     protected $walletModel;
     protected $transactionModel;
+    protected $senderInfoModel;
 
     public function __construct()
     {
@@ -23,6 +25,7 @@ class RemittanceController extends ResourceController
         $this->tokenModel = new AccessTokenModel();
         $this->walletModel = new RemittanceWalletModel();
         $this->transactionModel = new RemittanceTransactionModel();
+        $this->senderInfoModel = new RemittanceSenderInfoModel();
     }
 
     public function getToken()
@@ -102,11 +105,17 @@ class RemittanceController extends ResourceController
         ], 200);
     }
     
-    public function pushRequest()
+    /**
+     * Push Transaction Request
+     * POST /api/v1/Remittance/push-request-txn
+     * Headers: x-api-key, Authorization: Bearer {token}, Content-Type: application/json
+     */
+    public function pushRequestTxn()
     {
         $json = $this->request->getJSON(true);
 
-        $requiredFields = ['orgId', 'processId', 'billerCode', 'channel', 'data'];
+        // Validate required top-level fields
+        $requiredFields = ['orgId', 'processId', 'billerCode', 'channel', 'signature', 'notificationNo', 'data'];
         foreach ($requiredFields as $field) {
             if (empty($json[$field])) {
                 return $this->respond([
@@ -117,7 +126,8 @@ class RemittanceController extends ResourceController
             }
         }
 
-        $dataFields = ['referenceId', 'type', 'account', 'amount', 'remarks'];
+        // Validate required data fields
+        $dataFields = ['referenceId', 'type', 'account', 'amount', 'remarks', 'principalRefId'];
         foreach ($dataFields as $field) {
             if (!isset($json['data'][$field])) {
                 return $this->respond([
@@ -127,7 +137,32 @@ class RemittanceController extends ResourceController
                 ], 400);
             }
         }
+
+        // Validate senderInfo fields
+        if (empty($json['data']['senderInfo'])) {
+            return $this->respond([
+                'statusCode' => 400,
+                'message' => "Field 'senderInfo' is required",
+                'data' => null
+            ], 400);
+        }
+
+        $senderFields = [
+            'senderFirstName', 'senderLastName', 'senderCountryCode', 'senderEmail', 
+            'senderMobile', 'senderCurrencyCode', 'senderAddress', 'senderAccountOrCard',
+            'senderDOB', 'senderBirthCountry', 'senderIDType', 'senderIDNumber', 'senderAmount'
+        ];
+        foreach ($senderFields as $field) {
+            if (!isset($json['data']['senderInfo'][$field])) {
+                return $this->respond([
+                    'statusCode' => 400,
+                    'message' => "SenderInfo field '{$field}' is required",
+                    'data' => null
+                ], 400);
+            }
+        }
         
+        // Validate wallet
         $wallet = $this->walletModel->validateWallet($json['data']['account']);
         
         if (!$wallet) {
@@ -152,6 +187,7 @@ class RemittanceController extends ResourceController
             $db = \Config\Database::connect();
             $db->transStart();
             
+            // Create transaction with new structure
             $result = $this->transactionModel->createTransaction($json);
             
             if (!$result['success']) {
@@ -165,7 +201,14 @@ class RemittanceController extends ResourceController
             }
 
             $trxRefNo = $result['trx_ref_no'];
+            $transactionId = $result['transaction_id'];
             
+            // Save sender information to separate table
+            if (isset($json['data']['senderInfo'])) {
+                $this->senderInfoModel->createSenderInfo($transactionId, $json['data']['senderInfo']);
+            }
+            
+            // Update wallet balance
             $amount = floatval($json['data']['amount']);
             $newBalance = $this->walletModel->updateBalance($json['data']['account'], $amount);
             
@@ -180,13 +223,12 @@ class RemittanceController extends ResourceController
                 ], 200);
             }
             
+            // Success response message
             $message = sprintf(
-                "An amount of Tk. %.2f Transferred to %s. Your current balance is Tk. %.2f. Fees: Received TK. %.2f. Paid TK. %.2f. TxID: %s",
+                "An amount of Tk. %.2f Transferred to %s. Your current balance is Tk. %.2f. TxID: %s",
                 $amount,
                 $json['data']['account'],
                 $newBalance,
-                $amount,
-                $amount,
                 $trxRefNo
             );
 

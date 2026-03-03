@@ -9,8 +9,8 @@ class RemittanceTransactionModel extends Model
     protected $table = 'remittance_transactions';
     protected $primaryKey = 'id';
     protected $allowedFields = [
-        'org_id', 'process_id', 'biller_code', 'channel', 'reference_id',
-        'type', 'account', 'amount', 'remarks', 'principal_ref_id',
+        'org_id', 'process_id', 'biller_code', 'channel', 'signature', 'notification_no',
+        'reference_id', 'type', 'account', 'amount', 'remarks', 'principal_ref_id',
         'trx_ref_no', 'status', 'transaction_date', 'created_at', 'updated_at'
     ];
     protected $useTimestamps = true;
@@ -34,6 +34,8 @@ class RemittanceTransactionModel extends Model
             'process_id' => $data['processId'],
             'biller_code' => $data['billerCode'],
             'channel' => $data['channel'],
+            'signature' => $data['signature'] ?? null,
+            'notification_no' => $data['notificationNo'] ?? null,
             'reference_id' => $data['data']['referenceId'],
             'type' => $data['data']['type'],
             'account' => $data['data']['account'],
@@ -46,16 +48,31 @@ class RemittanceTransactionModel extends Model
         ];
         
         $this->insert($transactionData);
+        $transactionId = $this->getInsertID();
         
         return [
             'success' => true,
-            'trx_ref_no' => $trxRefNo
+            'trx_ref_no' => $trxRefNo,
+            'transaction_id' => $transactionId
         ];
     }
     
     public function getTransactionByRefId($refId)
     {
         return $this->where('reference_id', $refId)->first();
+    }
+    
+    /**
+     * Get transaction with sender info
+     */
+    public function getTransactionWithSenderInfo($refId)
+    {
+        $builder = $this->db->table($this->table);
+        $builder->select('remittance_transactions.*, remittance_sender_info.*');
+        $builder->join('remittance_sender_info', 'remittance_sender_info.remittance_transaction_id = remittance_transactions.id', 'left');
+        $builder->where('remittance_transactions.reference_id', $refId);
+        
+        return $builder->get()->getRowArray();
     }
     
     private function generateTrxRefNo()
