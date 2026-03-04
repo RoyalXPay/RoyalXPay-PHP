@@ -4,11 +4,11 @@ $webhookSecret = '99E9418B-6CBD-4574-A646-6415C062DEC7';
 
 echo "========================================\n";
 echo "HMAC Signature Calculator\n";
-echo "Endpoint: /api/v1/tap/deposit-webhook\n";
+echo "Endpoint: /api/v1/tap/transaction-enquiry\n";
 echo "========================================\n\n";
 
 // Request payload - COMPACT JSON
-$requestPayload = '{"id":"DITSL_TAP_TEST_001","event":"succeeded","data":{"id":"chg_TAP_TEST_001","amount":100,"currency":"BDT","status":"CAPTURED","customer":{"phone":{"number":"880171064443"}}}}';
+$requestPayload = '{"transaction_id":"chg_TAP_TEST_001"}';
 
 // Generate HMAC signature from compact JSON
 $signature = hash_hmac('sha256', $requestPayload, $webhookSecret);

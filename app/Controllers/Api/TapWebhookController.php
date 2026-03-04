@@ -76,23 +76,7 @@ class TapWebhookController extends BaseController
 
             if (!$wallet) {
                 log_message('error', "TAP Webhook: Wallet not found for phone: {$customerPhone}");
-                
-                // Store failed event
-                $this->depositModel->insert([
-                    'event_id' => $tapEventId,
-                    'event_type' => 'wallet.deposit.failed',
-                    'transaction_id' => $transactionId,
-                    'external_reference' => $tapEventId,
-                    'user_id' => $userId,
-                    'amount' => $amount,
-                    'currency' => $currency,
-                    'status' => 'failed',
-                    'error_message' => 'Wallet not found',
-                    'processed_by' => 'DITSL',
-                    'raw_payload' => $rawPayload,
-                    'created_at' => date('Y-m-d H:i:s')
-                ]);
-
+                // Do not store any data when wallet is not found
                 return $this->standardResponse(400, 'Wallet not found', null);
             }
 

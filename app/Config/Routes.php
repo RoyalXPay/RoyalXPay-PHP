@@ -1177,9 +1177,10 @@ $routes->group('api/v1/Remittance', ['namespace' => 'App\Controllers\Api', 'filt
 });
 
 // TAP Payment Webhooks (Uses HMAC signature verification)
-$routes->group('api/tap', ['namespace' => 'App\Controllers\Api', 'filter' => 'tapwebhook'], function($routes) {
+$routes->group('api/v1/tap', ['namespace' => 'App\Controllers\Api', 'filter' => 'tapwebhook'], function($routes) {
     $routes->post('deposit-webhook', 'TapWebhookController::receiveDeposit');
+    $routes->post('transaction-enquiry', 'TapTransactionEnquiryController::enquiry');
+    $routes->post('reconciliation', 'TapTransactionEnquiryController::reconciliation');
 });
-
 
 
