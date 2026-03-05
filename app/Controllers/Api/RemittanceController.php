@@ -8,6 +8,7 @@ use App\Models\AccessTokenModel;
 use App\Models\RemittanceWalletModel;
 use App\Models\RemittanceTransactionModel;
 use App\Models\RemittanceSenderInfoModel;
+use App\Libraries\TapRemittanceClient;
 use Exception;
 
 class RemittanceController extends ResourceController
@@ -18,6 +19,7 @@ class RemittanceController extends ResourceController
     protected $walletModel;
     protected $transactionModel;
     protected $senderInfoModel;
+    protected $tapClient;
 
     public function __construct()
     {
@@ -26,6 +28,115 @@ class RemittanceController extends ResourceController
         $this->walletModel = new RemittanceWalletModel();
         $this->transactionModel = new RemittanceTransactionModel();
         $this->senderInfoModel = new RemittanceSenderInfoModel();
+        $this->tapClient = new TapRemittanceClient();
+    }
+    
+    /**
+     * Helper: Call TAP API and optionally save response to DB
+     * Only calls external TAP API if environment is NOT 'development'
+     * Returns null in development environment to allow internal logic to proceed
+     */
+    protected function callTapAndSave(string $endpoint, array $payload, bool $saveToDb = true)
+    {
+        try {
+            // Check environment - only call external TAP API if NOT development
+            $environment = env('CI_ENVIRONMENT');
+            
+            if ($environment === 'development') {
+                // Development environment - skip external API call, use internal logic
+                // Return null to allow controller method to continue with internal logic
+                log_message('info', "Development environment detected - skipping external TAP API call for {$endpoint}");
+                return null;
+            }
+            
+            // Non-development environment - call external TAP API
+            $cache = \Config\Services::cache();
+            $token = $cache->get('tap_bearer_token');
+            
+            if (!$token && $endpoint !== '/GetToken') {
+                // Token not found or expired - user must call GetToken first
+                return [
+                    'statusCode' => 401,
+                    'message' => 'Bearer token expired or not found. Please call GetToken endpoint first.',
+                    'data' => null
+                ];
+            }
+            
+            // Set bearer token for authenticated endpoints
+            if ($token && $endpoint !== '/GetToken') {
+                $this->tapClient->setBearerToken($token);
+            }
+            
+            // Call appropriate TAP API method
+            $tapResponse = null;
+            switch ($endpoint) {
+                case '/GetToken':
+                    $tapResponse = $this->tapClient->getToken($payload['username'], $payload['password']);
+                    break;
+                case '/ValidateUser':
+                    $tapResponse = $this->tapClient->validateUser($payload['WalletNumber']);
+                    break;
+                case '/push-request-txn':
+                    $tapResponse = $this->tapClient->pushRequestTxn($payload);
+                    break;
+                case '/TxnEnquiry':
+                    $tapResponse = $this->tapClient->txnEnquiry($payload['TxnRefId']);
+                    break;
+                case '/BalanceEnquiry':
+                    $tapResponse = $this->tapClient->balanceEnquiry($payload['accountNo']);
+                    break;
+                case '/GetAccountStatement':
+                    $tapResponse = $this->tapClient->getAccountStatement($payload);
+                    break;
+            }
+            
+            // Log TAP response
+            log_message('info', "TAP API {$endpoint} response: " . json_encode($tapResponse));
+            
+            return $tapResponse;
+            
+        } catch (Exception $e) {
+            log_message('error', "TAP API {$endpoint} failed: " . $e->getMessage());
+            return [
+                'statusCode' => 500,
+                'message' => 'External API call failed: ' . $e->getMessage(),
+                'data' => null
+            ];
+        }
+    }
+
+    /**
+     * Helper method to save or update token in database
+     * Works for all environments (development, production, staging, etc.)
+     */
+    private function saveTokenToDatabase($username, $token, $expiryDateTime)
+    {
+        $db = \Config\Database::connect();
+        
+        // Check if token exists for this username
+        $existingToken = $db->table('access_tokens')
+            ->where('username', $username)
+            ->get()
+            ->getRow();
+        
+        $tokenData = [
+            'token' => $token,
+            'expires_at' => date('Y-m-d H:i:s', strtotime($expiryDateTime)),
+            'created_at' => date('Y-m-d H:i:s')
+        ];
+        
+        if ($existingToken) {
+            // Update existing token
+            log_message('info', "Updating existing token for username: {$username}");
+            $db->table('access_tokens')
+                ->where('username', $username)
+                ->update($tokenData);
+        } else {
+            // Insert new token
+            log_message('info', "Inserting new token for username: {$username}");
+            $tokenData['username'] = $username;
+            $db->table('access_tokens')->insert($tokenData);
+        }
     }
 
     public function getToken()
@@ -40,37 +151,44 @@ class RemittanceController extends ResourceController
             ], 400);
         }
         
-        $user = $this->userModel->where('username', $json['username'])
-                                ->where('status', 'active')
-                                ->first();
+        // Call TAP GetToken API (null in development environment)
+        $tapResponse = $this->callTapAndSave('/GetToken', $json, false);
         
-        if (!$user) {
+        // If null (development environment), generate mock token
+        if ($tapResponse === null) {
+            $mockToken = bin2hex(random_bytes(32));
+            $expiryDateTime = date('Y-m-d H:i:s', strtotime('+1 hour'));
+            
+            $cache = \Config\Services::cache();
+            $cache->save('tap_bearer_token', $mockToken, 3000);
+            
+            // Save/Update token in database (works for all environments)
+            $this->saveTokenToDatabase($json['username'], $mockToken, $expiryDateTime);
+            
             return $this->respond([
-                'statusCode' => 100,
-                'message' => 'Credentials not matched!',
-                'data' => null
-            ], 100);
+                'statusCode' => 200,
+                'message' => 'SUCCESS (Development Environment)',
+                'data' => [
+                    'accessToken' => $mockToken,
+                    'expiryDateTime' => date('Y-m-d\TH:i:s.u', strtotime('+1 hour'))
+                ]
+            ]);
         }
-
-        if (!password_verify($json['password'], $user['password'])) {
-            return $this->respond([
-                'statusCode' => 100,
-                'message' => 'Credentials not matched!',
-                'data' => null
-            ], 100);
-        }
-
-        // Generate token
-        $tokenData = $this->tokenModel->generateToken($user['user_id'], $user['username']);
         
-        return $this->respond([
-            'statusCode' => 200,
-            'message' => 'SUCCESS',
-            'data' => [
-                'accessToken' => $tokenData['token'],
-                'expiryDateTime' => date('Y-m-d\TH:i:s.u\Z', strtotime($tokenData['expires_at']))
-            ]
-        ], 200);
+        // If TAP returns token, cache it AND save to database (works for all environments)
+        if (isset($tapResponse['data']['accessToken'])) {
+            $cache = \Config\Services::cache();
+            $cache->save('tap_bearer_token', $tapResponse['data']['accessToken'], 3000);
+            
+            // Parse expiry date from TAP response or use default
+            $expiryDateTime = $tapResponse['data']['expiryDateTime'] ?? date('Y-m-d H:i:s', strtotime('+1 hour'));
+            
+            // Save/Update token in database (works for all environments)
+            $this->saveTokenToDatabase($json['username'], $tapResponse['data']['accessToken'], $expiryDateTime);
+        }
+        
+        // Return TAP's response
+        return $this->respond($tapResponse);
     }
 
     public function validateUser()
@@ -85,31 +203,46 @@ class RemittanceController extends ResourceController
             ], 400);
         }
 
+        // Call TAP ValidateUser API (null in development environment)
+        $tapResponse = $this->callTapAndSave('/ValidateUser', $json);
+        
+        // Check if wallet exists in local database
         $wallet = $this->walletModel->validateWallet($json['WalletNumber']);
         
-        if (!$wallet) {
-            return $this->respond([
-                'statusCode' => 100,
-                'message' => 'INVALID WALLET!',
-                'data' => null
-            ], 200);
+        // If null (development environment), use local database validation
+        if ($tapResponse === null) {
+            if ($wallet) {
+                return $this->respond([
+                    'statusCode' => 200,
+                    'message' => 'SUCCESS (Development Environment)',
+                    'data' => [
+                        'name' => $wallet['name'],
+                        'walletNumber' => $wallet['wallet_number'],
+                        'status' => $wallet['status']
+                    ]
+                ]);
+            } else {
+                return $this->respond([
+                    'statusCode' => 400,
+                    'message' => 'Wallet not found in local database',
+                    'data' => null
+                ], 400);
+            }
         }
-
-        // Store wallet_number in the token for future use
-        $authHeader = $this->request->getHeaderLine('Authorization');
-        if (!empty($authHeader)) {
-            $token = str_replace('Bearer ', '', $authHeader);
-            $this->tokenModel->updateWalletNumber($token, $json['WalletNumber']);
+        
+        // If TAP validates successfully, save/update in your database
+        if ($tapResponse['statusCode'] === 200) {
+            if ($wallet) {
+                // Update wallet info from TAP if needed
+                log_message('info', 'Wallet exists in local DB: ' . $json['WalletNumber']);
+            } else {
+                // Optionally create wallet in your DB
+                log_message('info', 'Wallet validated by TAP but not in local DB: ' . $json['WalletNumber']);
+            }
         }
-
-        return $this->respond([
-            'statusCode' => 200,
-            'message' => 'SUCCESS',
-            'data' => [
-                'status' => $wallet['status'],
-                'name' => $wallet['name']
-            ]
-        ], 200);
+        
+        // Return TAP's response
+        return $this->respond($tapResponse);
     }
     
     /**
@@ -396,6 +529,14 @@ class RemittanceController extends ResourceController
             ], 100);
         }
 
+        // Call TAP API first (null in development environment)
+        $tapResponse = $this->callTapAndSave('/push-request-txn', $json, false);
+        
+        // If TAP API call fails (and not null/development), return the TAP error
+        if ($tapResponse !== null && $tapResponse['statusCode'] !== 200) {
+            return $this->respond($tapResponse);
+        }
+
         try {
             $db = \Config\Database::connect();
             $db->transStart();
@@ -436,7 +577,7 @@ class RemittanceController extends ResourceController
                 ], 100);
             }
             
-            // Success response message
+            // Success response message with local trxRefNo
             $message = sprintf(
                 "An amount of Tk. %.2f Transferred to %s. Your current balance is Tk. %.2f. TxID: %s",
                 $amount,
@@ -445,11 +586,12 @@ class RemittanceController extends ResourceController
                 $trxRefNo
             );
 
+            // Return combined response with local trxRefNo and TAP data
             return $this->respond([
                 'statusCode' => 200,
                 'message' => $message,
                 'trxRefNo' => $trxRefNo,
-                'data' => null
+                'data' => ($tapResponse !== null && isset($tapResponse['data'])) ? $tapResponse['data'] : null
             ], 200);
 
         } catch (Exception $e) {
@@ -475,24 +617,33 @@ class RemittanceController extends ResourceController
             ], 400);
         }
 
-        $transaction = $this->transactionModel->getTransactionByRefId($json['TxnRefId']);
+        // Call TAP API to get transaction enquiry (null in development environment)
+        $tapResponse = $this->callTapAndSave('/TxnEnquiry', $json, false);
         
-        if (!$transaction) {
+        // If null (development environment), query local database
+        if ($tapResponse === null) {
+            $transaction = $this->transactionModel->getTransactionByRefId($json['TxnRefId']);
+            
+            if (!$transaction) {
+                return $this->respond([
+                    'statusCode' => 100,
+                    'message' => 'No Data Found!',
+                    'data' => null
+                ], 200);
+            }
+
             return $this->respond([
-                'statusCode' => 100,
-                'message' => 'No Data Found!',
-                'data' => null
+                'statusCode' => 200,
+                'message' => 'COMPLETED (Development Environment)',
+                'data' => [
+                    'trxRefNo' => $transaction['trx_ref_no'],
+                    'transactionDate' => date('Y-m-d\TH:i:s.u', strtotime($transaction['transaction_date']))
+                ]
             ], 200);
         }
-
-        return $this->respond([
-            'statusCode' => 200,
-            'message' => 'COMPLETED',
-            'data' => [
-                'trxRefNo' => $transaction['trx_ref_no'],
-                'transactionDate' => date('Y-m-d\TH:i:s.u', strtotime($transaction['transaction_date']))
-            ]
-        ], 200);
+        
+        // Return TAP response
+        return $this->respond($tapResponse);
     }
     
     /**
@@ -507,42 +658,16 @@ class RemittanceController extends ResourceController
         try {
             $json = $this->request->getJSON(true);
             
-            // Get wallet_number from token (set by validateUser endpoint)
-            $tokenWalletNumber = $this->request->walletNumber ?? null;
-            
-            // Check if accountNo is provided in request body
-            $walletNumber = null;
-            if (!empty($json['accountNo'])) {
-                // If accountNo is provided, it must match the validated wallet number
-                if (!$tokenWalletNumber) {
-                    return $this->respond([
-                        'statusCode' => 400,
-                        'message' => 'Please call ValidateUser endpoint first',
-                        'data' => null
-                    ], 400);
-                }
-                
-                // Verify that accountNo matches the validated wallet number
-                if ($json['accountNo'] !== $tokenWalletNumber) {
-                    return $this->respond([
-                        'statusCode' => 400,
-                        'message' => 'Account number does not match validated wallet',
-                        'data' => null
-                    ], 400);
-                }
-                
-                $walletNumber = $json['accountNo'];
-            } else {
-                // Use wallet from token if no accountNo provided
-                if (!$tokenWalletNumber) {
-                    return $this->respond([
-                        'statusCode' => 400,
-                        'message' => 'Please provide accountNo in request body or call ValidateUser endpoint first',
-                        'data' => null
-                    ], 400);
-                }
-                $walletNumber = $tokenWalletNumber;
+            // accountNo is required in request body
+            if (empty($json['accountNo'])) {
+                return $this->respond([
+                    'statusCode' => 400,
+                    'message' => 'accountNo is required',
+                    'data' => null
+                ], 400);
             }
+            
+            $walletNumber = $json['accountNo'];
 
             // Get wallet details using validateWallet
             $wallet = $this->walletModel->validateWallet($walletNumber);
@@ -564,16 +689,30 @@ class RemittanceController extends ResourceController
                 ], 400);
             }
 
-            // Return success response with wallet details
-            return $this->respond([
-                'statusCode' => 200,
-                'message' => 'Success',
-                'data' => [
-                    'accountName' => $wallet['name'],
-                    'currency' => $wallet['currency'] ?? 'BDT',
-                    'drawableBalance' => number_format($wallet['balance'], 2, '.', '')
-                ]
-            ], 200);
+            // Call TAP API to get balance (null in development environment)
+            $tapResponse = $this->callTapAndSave('/BalanceEnquiry', ['accountNo' => $walletNumber], false);
+            
+            // If null (development environment), return local wallet balance
+            if ($tapResponse === null) {
+                return $this->respond([
+                    'statusCode' => 200,
+                    'message' => 'Success (Development Environment)',
+                    'data' => [
+                        'accountName' => $wallet['name'],
+                        'currency' => $wallet['currency'] ?? 'BDT',
+                        'drawableBalance' => number_format($wallet['balance'], 2, '.', '')
+                    ]
+                ], 200);
+            }
+            
+            // If TAP API successful, optionally sync balance with local DB
+            if ($tapResponse['statusCode'] === 200 && isset($tapResponse['data']['drawableBalance'])) {
+                // You can optionally update local wallet balance here if needed
+                // $this->walletModel->updateBalanceFromTap($walletNumber, $tapResponse['data']['drawableBalance']);
+            }
+            
+            // Return TAP response
+            return $this->respond($tapResponse);
 
         } catch (Exception $e) {
             log_message('error', 'Balance Enquiry failed: ' . $e->getMessage());
@@ -615,27 +754,6 @@ class RemittanceController extends ResourceController
             return $this->respond([
                 'statusCode' => 400,
                 'message' => 'Field toDate is required',
-                'data' => null
-            ], 400);
-        }
-
-        // Get wallet_number from token (set by validateUser endpoint)
-        $tokenWalletNumber = $this->request->walletNumber ?? null;
-        
-        // Validate that accountNo matches the validated wallet number
-        if (!$tokenWalletNumber) {
-            return $this->respond([
-                'statusCode' => 400,
-                'message' => 'Please call ValidateUser endpoint first',
-                'data' => null
-            ], 400);
-        }
-        
-        // Verify that accountNo matches the validated wallet number
-        if ($json['accountNo'] !== $tokenWalletNumber) {
-            return $this->respond([
-                'statusCode' => 400,
-                'message' => 'Account number does not match validated wallet',
                 'data' => null
             ], 400);
         }
@@ -694,35 +812,52 @@ class RemittanceController extends ResourceController
                 ], 400);
             }
 
-            // Get transactions for the date range
-            $transactions = $this->transactionModel->getAccountStatement(
-                $wallet['id'],
-                $fromDateDb->format('Y-m-d'),
-                $toDateDb->format('Y-m-d')
-            );
+            // Call TAP API to get account statement (null in development environment)
+            $tapResponse = $this->callTapAndSave('/GetAccountStatement', $json, false);
+            
+            // If null (development environment), return local database statement
+            if ($tapResponse === null) {
+                // Get transactions for the date range from local database
+                $transactions = $this->transactionModel->getAccountStatement(
+                    $wallet['id'],
+                    $fromDateDb->format('Y-m-d'),
+                    $toDateDb->format('Y-m-d')
+                );
 
-            // Format response data
-            $statementData = [];
-            foreach ($transactions as $txn) {
-                $statementData[] = [
-                    'acctName' => $wallet['name'],
-                    'traceNo' => $txn['trx_ref_no'] ?? '0',
-                    'trnDate' => date('d/m/Y', strtotime($txn['transaction_date'])),
-                    'valueDate' => date('d/m/Y', strtotime($txn['transaction_date'])),
-                    'transactionType' => 'Credit',
-                    'amount' => number_format($txn['amount'], 2, '.', ''),
-                    'balance' => number_format($txn['running_balance'], 2, '.', ''),
-                    'particulars' => $txn['remarks'] ?? 'Remittance Credit',
-                    'currCode' => $wallet['currency'] ?? 'BDT',
-                    'acctNumber' => $accountNo
-                ];
+                // Format response data
+                $statementData = [];
+                foreach ($transactions as $txn) {
+                    $statementData[] = [
+                        'acctName' => $wallet['name'],
+                        'traceNo' => $txn['trx_ref_no'] ?? '0',
+                        'trnDate' => date('d/m/Y', strtotime($txn['transaction_date'])),
+                        'valueDate' => date('d/m/Y', strtotime($txn['transaction_date'])),
+                        'transactionType' => 'Credit',
+                        'amount' => number_format($txn['amount'], 2, '.', ''),
+                        'balance' => number_format($txn['running_balance'], 2, '.', ''),
+                        'particulars' => $txn['remarks'] ?? 'Remittance Credit',
+                        'currCode' => $wallet['currency'] ?? 'BDT',
+                        'acctNumber' => $accountNo
+                    ];
+                }
+
+                return $this->respond([
+                    'statusCode' => 200,
+                    'message' => 'Success (Development Environment)',
+                    'data' => $statementData
+                ], 200);
             }
-
-            return $this->respond([
-                'statusCode' => 200,
-                'message' => 'Success',
-                'data' => $statementData
-            ], 200);
+            
+            // If TAP API successful, optionally sync transactions with local DB
+            if ($tapResponse['statusCode'] === 200 && isset($tapResponse['data'])) {
+                // You can optionally save TAP transactions to local DB here if needed
+                // foreach ($tapResponse['data'] as $txn) {
+                //     $this->transactionModel->syncTransactionFromTap($txn);
+                // }
+            }
+            
+            // Return TAP response
+            return $this->respond($tapResponse);
 
         } catch (Exception $e) {
             log_message('error', 'Get Account Statement failed: ' . $e->getMessage());

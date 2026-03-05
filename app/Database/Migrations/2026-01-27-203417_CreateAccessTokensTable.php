@@ -19,6 +19,7 @@ class CreateAccessTokensTable extends Migration
                 'type'       => 'INT',
                 'constraint' => 11,
                 'unsigned'   => true,
+                'null'       => true,
             ],
             'username' => [
                 'type'       => 'VARCHAR',
@@ -26,7 +27,7 @@ class CreateAccessTokensTable extends Migration
             ],
             'token' => [
                 'type'       => 'VARCHAR',
-                'constraint' => 64,
+                'constraint' => 512,
                 'unique'     => true,
             ],
             'expires_at' => [
