@@ -42,7 +42,7 @@ class RemittanceController extends ResourceController
             // Check environment - only call external TAP API if NOT development
             $environment = env('CI_ENVIRONMENT');
             
-            if ($environment === 'development') {
+            if ($environment === 'local') {
                 // Development environment - skip external API call, use internal logic
                 // Return null to allow controller method to continue with internal logic
                 log_message('info', "Development environment detected - skipping external TAP API call for {$endpoint}");
