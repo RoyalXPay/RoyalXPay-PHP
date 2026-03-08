@@ -38,9 +38,8 @@ class TapRemittanceClient
      */
     public function __construct()
     {
-        // Base URL should include full path: http://stg-gw.tadlbd.com:885/Remittance/api/v1
-        $endpoint = env('TAB_REMITTENCE_URL');
-        $this->baseUrl = (env('TAP_REMITTANCE_BASE_URL') . $endpoint);
+        // Base URL should include full path: http://stg-gw.tadlbd.com:885/Remittance/api/v1/Remittance
+        $this->baseUrl = env('TAP_REMITTANCE_BASE_URL');
         $this->apiKey = env('TAP_REMITTANCE_API_KEY');
         $this->client = Services::curlrequest();
     }
