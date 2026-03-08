@@ -1167,8 +1167,11 @@ $routes->group('api', ['namespace' => 'App\Controllers\Api'], function ($routes)
 
 // Remittance API Routes
 
+// GetToken - No authentication required
+$routes->post('api/v1/Remittance/GetToken', 'Api\RemittanceController::getToken');
+
+// Other Remittance APIs - Require API key and bearer token
 $routes->group('api/v1/Remittance', ['namespace' => 'App\Controllers\Api', 'filter' => 'apikey'], function($routes) {
-    $routes->post('GetToken', 'RemittanceController::getToken');
     $routes->post('ValidateUser', 'RemittanceController::validateUser', ['filter' => 'bearerauth']);
     $routes->post('push-request-txn', 'RemittanceController::pushRequestTxn', ['filter' => 'bearerauth']);
     $routes->post('TxnEnquiry', 'RemittanceController::txnEnquiry', ['filter' => 'bearerauth']);
