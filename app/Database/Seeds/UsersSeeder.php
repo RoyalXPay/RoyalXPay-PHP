@@ -10,20 +10,15 @@ class UsersSeeder extends Seeder
     {
         $data = [
             [
-                'firstname' => 'Pradeep',
-                'lastname' => 'Yadav',
-                'email' => 'pradeepy@gmail.com',
-                'phone' => 1234567890,
-                'password' => password_hash('12345678', PASSWORD_DEFAULT),
-                'image' => 'pradeep.jpg',
-                'status' => 1,
-                'token' => 'pradeepydv',
-                'groups' => 'admin',
-                'rights' => '1,2',
-                'created_at' => date('Y-m-d H:i:s'),
-                'updated_at' => date('Y-m-d H:i:s'),
+                'name' => 'Pradeep Yadav',
+                'username'  => 'pradeepy',
+                'email'     => 'pradeepy@gmail.com',
+                'phone'     => 1234567890,
+                'password'  => password_hash('12345678', PASSWORD_DEFAULT),
+                'status'    => 1,
+                'created_at'=> date('Y-m-d H:i:s'),
+                'updated_at'=> date('Y-m-d H:i:s'),
             ],
-            // Add more user data as needed
         ];
 
         $this->db->table('users')->insertBatch($data);

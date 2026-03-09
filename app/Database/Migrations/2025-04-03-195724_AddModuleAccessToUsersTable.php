@@ -12,7 +12,6 @@ class AddModuleAccessToUsersTable extends Migration
             'module_access' => [
                 'type'       => 'TEXT',
                 'null'       => true,
-                'after'      => 'permissions',
             ],
         ];
 
