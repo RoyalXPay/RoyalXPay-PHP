@@ -1,0 +1,104 @@
+# Git# Docker files
+
+.git.dockerignore
+
+.gitignoreDockerfile
+
+.gitattributesdocker-compose.yml
+
+docker/
+
+# Docker files
+
+Dockerfile# Git
+
+docker-compose.yml.git
+
+.dockerignore.gitignore
+
+.gitattributes
+
+# IDE
+
+.vscode# CI files
+
+.idea.github
+
+*.swp.gitlab-ci.yml
+
+*.swo
+
+# IDE
+
+# OS files.vscode
+
+.DS_Store.idea
+
+Thumbs.db*.swp
+
+*.swo
+
+# Documentation*~
+
+*.md
+
+docs/# OS files
+
+.DS_Store
+
+# TestsThumbs.db
+
+tests/
+
+phpunit.xml.dist# Documentation
+
+README.md
+
+# Vendor (will be installed during build)*.md
+
+vendor/docs/
+
+
+
+# Writable directories (exclude contents, directories will be created fresh)# Tests
+
+writable/debugbar/*tests/
+
+writable/logs/*phpunit.xml.dist
+
+writable/session/*.phpunit.result.cache
+
+writable/cache/*
+
+# Development files
+
+# Keep the directory structure files.env.example
+
+!writable/.gitkeep.editorconfig
+
+!writable/debugbar/.gitkeep.php-cs-fixer.php
+
+!writable/logs/.gitkeep
+
+!writable/session/.gitkeep# Temporary files
+
+!writable/cache/.gitkeeptmp/
+
+temp/
+*.log
+
+# Vendor (will be installed during build)
+vendor/
+
+# Writable directories (mounted as volumes)
+writable/debugbar/*
+writable/logs/*
+writable/session/*
+writable/cache/*
+writable/cache/*
+writable/logs/*
+writable/session/*
+writable/uploads/*
+
+# Node modules (if any)
+node_modules/

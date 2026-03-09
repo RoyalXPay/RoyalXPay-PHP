@@ -1,0 +1,27 @@
+services:
+  royalxpay-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: royalxpay-app
+    ports:
+      - "8080:80"
+    # volumes:
+    #   - ./writable:/var/www/html/writable
+    #   - ./public/uploads:/var/www/html/public/uploads
+    environment:
+      - CI_ENVIRONMENT=staging
+      - database.default.hostname=host.docker.internal
+      - database.default.database=royalxpay
+      - database.default.username=root
+      - database.default.password=
+      - database.default.port=3306
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    restart: unless-stopped
+    networks:
+      - royalxpay-network
+
+networks:
+  royalxpay-network:
+    driver: bridge
